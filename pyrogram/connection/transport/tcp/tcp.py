@@ -118,12 +118,12 @@ class TCP:
                 await self.close()  # Tutup koneksi yang ada
                 await self.connect()  # Lakukan reconnect
                 return None
-           else:
-               if chunk:
-                   data += chunk
-               else:
-                   await self.close()  # Tutup koneksi yang ada
-                   await self.connect()  # Lakukan reconnect
-                   return None
+            else:
+                if chunk:
+                    data += chunk
+                else:
+                    await self.close()  # Tutup koneksi yang ada
+                    await self.connect()  # Lakukan reconnect
+                    return None
 
         return data
