@@ -99,9 +99,11 @@ class TCP:
                 if self.writer is not None:
                     self.writer.write(data)
                     await self.writer.drain()
-            except Exception as e:
+            except OSError as e:
                 log.info("Send exception: %s %s", type(e).__name__, e)
-                raise OSError(e)
+                await self.close()  # Tutup koneksi yang ada
+                await self.connect()  # Lakukan reconnect
+                raise OSError("Connection error, reconnected") from None
 
     async def recv(self, length: int = 0):
         data = b""
@@ -113,11 +115,15 @@ class TCP:
                     TCP.TIMEOUT
                 )
             except (OSError, asyncio.TimeoutError):
+                await self.close()  # Tutup koneksi yang ada
+                await self.connect()  # Lakukan reconnect
                 return None
-            else:
-                if chunk:
-                    data += chunk
-                else:
-                    return None
+           else:
+               if chunk:
+                   data += chunk
+               else:
+                   await self.close()  # Tutup koneksi yang ada
+                   await self.connect()  # Lakukan reconnect
+                   return None
 
         return data
