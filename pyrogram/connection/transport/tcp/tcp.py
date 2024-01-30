@@ -21,29 +21,24 @@ import ipaddress
 import logging
 import socket
 from concurrent.futures import ThreadPoolExecutor
-
 import socks
 
 log = logging.getLogger(__name__)
 
-
 class TCP:
     TIMEOUT = 10
 
-    def __init__(self, ipv6: bool, proxy: dict):
+    def __init__(self, ipv6: bool, proxy: dict, address: tuple = None):
+        self.address = address
         self.socket = None
-
         self.reader = None
         self.writer = None
-
         self.lock = asyncio.Lock()
         self.loop = asyncio.get_event_loop()
-
         self.proxy = proxy
 
         if proxy:
             hostname = proxy.get("hostname")
-
             try:
                 ip_address = ipaddress.ip_address(hostname)
             except ValueError:
@@ -53,7 +48,6 @@ class TCP:
                     self.socket = socks.socksocket(socket.AF_INET6)
                 else:
                     self.socket = socks.socksocket(socket.AF_INET)
-
             self.socket.set_proxy(
                 proxy_type=getattr(socks, proxy.get("scheme").upper()),
                 addr=hostname,
@@ -61,26 +55,26 @@ class TCP:
                 username=proxy.get("username", None),
                 password=proxy.get("password", None)
             )
-
             self.socket.settimeout(TCP.TIMEOUT)
-
             log.info("Using proxy %s", hostname)
         else:
             self.socket = socket.socket(
                 socket.AF_INET6 if ipv6
                 else socket.AF_INET
             )
-
             self.socket.setblocking(False)
 
-    async def connect(self, address: tuple):
+    async def connect(self, address: tuple = None):
+        if address is not None:
+            self.address = address
+
         if self.proxy:
             with ThreadPoolExecutor(1) as executor:
-                await self.loop.run_in_executor(executor, self.socket.connect, address)
+                await self.loop.run_in_executor(executor, self.socket.connect, self.address)
         else:
             try:
-                await asyncio.wait_for(asyncio.get_event_loop().sock_connect(self.socket, address), TCP.TIMEOUT)
-            except asyncio.TimeoutError:  # Re-raise as TimeoutError. asyncio.TimeoutError is deprecated in 3.11
+                await asyncio.wait_for(asyncio.get_event_loop().sock_connect(self.socket, self.address), TCP.TIMEOUT)
+            except asyncio.TimeoutError:
                 raise TimeoutError("Connection timed out")
 
         self.reader, self.writer = await asyncio.open_connection(sock=self.socket)
@@ -101,8 +95,8 @@ class TCP:
                     await self.writer.drain()
             except OSError as e:
                 log.info("Send exception: %s %s", type(e).__name__, e)
-                await self.close()  # Tutup koneksi yang ada
-                await self.connect()  # Lakukan reconnect
+                await self.close()
+                await self.connect(self.address)
                 raise OSError("Connection error, reconnected") from None
 
     async def recv(self, length: int = 0):
@@ -115,15 +109,15 @@ class TCP:
                     TCP.TIMEOUT
                 )
             except (OSError, asyncio.TimeoutError):
-                await self.close()  # Tutup koneksi yang ada
-                await self.connect()  # Lakukan reconnect
+                await self.close()
+                await self.connect(self.address)
                 return None
             else:
                 if chunk:
                     data += chunk
                 else:
-                    await self.close()  # Tutup koneksi yang ada
-                    await self.connect()  # Lakukan reconnect
+                    await self.close()
+                    await self.connect(self.address)
                     return None
 
         return data
