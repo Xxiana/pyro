@@ -300,25 +300,22 @@ class Session:
                 if packet:
                     error_code = -Int.read(BytesIO(packet))
 
-                    if error_code == 404:
-                        raise Exception(
-                            "Auth key not found in the system. You must delete your session file"
-                            "and log in again with your phone number or bot token"
-                        )
-
                     log.warning(
                         "Server sent transport error: %s (%s)",
                         error_code, Session.TRANSPORT_ERRORS.get(error_code, "unknown error")
                     )
 
                 if self.is_started.is_set():
-                    self.loop.create_task(self.restart())
+                    await self.restart()  # Reconnect here
+                else:
+                    break  # If session is not started yet, break the loop
 
-                break
+                continue  # Continue loop for a new session
 
             self.loop.create_task(self.handle_packet(packet))
 
         log.info("NetworkTask stopped")
+  
 
     async def send(self, data: TLObject, wait_response: bool = True, timeout: float = WAIT_TIMEOUT):
         message = self.msg_factory(data)
